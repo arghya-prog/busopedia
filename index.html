@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kolkata Bus Route Finder</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    h1 {
+      text-align: center;
+    }
+    .input-group {
+      max-width: 400px;
+      margin: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    input, button {
+      padding: 10px;
+      font-size: 16px;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      max-width: 700px;
+      margin: 20px auto;
+    }
+    li {
+      background: white;
+      margin: 10px 0;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+    @media (max-width: 600px) {
+      body {
+        padding: 10px;
+      }
+      .input-group {
+        width: 100%;
+      }
+      input, button {
+        width: 100%;
+        box-sizing: border-box;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Kolkata Bus Route Finder</h1>
+  <div class="input-group">
+    <input type="text" id="source" list="stops" placeholder="Enter source stop" />
+    <input type="text" id="destination" list="stops" placeholder="Enter destination stop" />
+    <datalist id="stops"></datalist>
+    <button onclick="findBus()">Find Buses</button>
+  </div>
+  <ul id="busList"></ul>
+
+  <script>
+    let routes = [];
+    let allStops = new Set();
+
+    fetch("routes.json")
+      .then(res => res.json())
+      .then(data => {
+        routes = data;
+        routes.forEach(bus => {
+          if (Array.isArray(bus.route)) {
+            bus.route.forEach(stop => allStops.add(stop.trim()));
+          }
+        });
+
+        const datalist = document.getElementById("stops");
+        [...allStops].sort().forEach(stop => {
+          const option = document.createElement("option");
+          option.value = stop;
+          datalist.appendChild(option);
+        });
+      });
+
+    function findBus() {
+      const src = document.getElementById("source").value.trim();
+      const dst = document.getElementById("destination").value.trim();
+      const busList = document.getElementById("busList");
+      busList.innerHTML = "";
+
+      if (!src || !dst || src === dst) {
+        busList.innerHTML = "<li>Please enter valid, different stops.</li>";
+        return;
+      }
+
+      const matched = [];
+      const transferMatches = [];
+
+      routes.forEach(bus => {
+        const route = bus.route || [];
+        const i = route.indexOf(src);
+        const j = route.indexOf(dst);
+        const ri = route.indexOf(dst);
+        const rj = route.indexOf(src);
+
+        if (i > -1 && j > i) {
+          matched.push(bus);
+        } else if (ri > -1 && rj > ri) {
+          matched.push(bus); // Reverse journey
+        }
+      });
+
+      if (matched.length > 0) {
+        matched.forEach(bus => {
+          const li = document.createElement("li");
+          const number = bus.bus_no || bus.bus_number || bus.number || "No Number";
+          const name = bus.bus_name || bus.name || "";
+          const routeDisplay = (Array.isArray(bus.route) ? bus.route.join(" → ") : "Route not available");
+          li.innerHTML = `<strong>${number}${name ? " - " + name : ""}</strong><br><small>${routeDisplay}</small>`;
+          busList.appendChild(li);
+        });
+      } else {
+        // Try finding multi-hop routes (basic)
+        const oneHop = [];
+
+        routes.forEach(bus1 => {
+          if (bus1.route.includes(src)) {
+            bus1.route.forEach(mid => {
+              if (mid !== src) {
+                routes.forEach(bus2 => {
+                  if (
+                    bus2.route.includes(mid) &&
+                    bus2.route.includes(dst) &&
+                    bus1 !== bus2
+                  ) {
+                    oneHop.push({ first: bus1, transfer: mid, second: bus2 });
+                  }
+                });
+              }
+            });
+          }
+        });
+
+        if (oneHop.length > 0) {
+          busList.innerHTML = "<li>No direct bus found. Suggested transfer routes:</li>";
+          oneHop.slice(0, 5).forEach(combo => {
+            const li = document.createElement("li");
+            const f1 = combo.first.bus_no || combo.first.number || "No Number";
+            const f2 = combo.second.bus_no || combo.second.number || "No Number";
+            li.innerHTML = `<strong>${f1}</strong> to <strong>${combo.transfer}</strong>, then <strong>${f2}</strong> to ${dst}`;
+            busList.appendChild(li);
+          });
+        } else {
+          busList.innerHTML = "<li>⚠️ No bus route found for this journey.</li>";
+        }
+      }
+    }
+  </script>
+</body>
+</html>
